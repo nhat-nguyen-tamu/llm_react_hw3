@@ -4,7 +4,7 @@ from langchain import OpenAI, ConversationChain
 from langchain.chains import SimpleSequentialChain
 
 # Initialize the LLM with OpenAI
-api_key = os.getenv("OPENAI_API_KEY")
+api_key = st.secrets["OPENAI_API_KEY"]
 llm = OpenAI(api_key=api_key)  # Replace with your API key
 conversation = ConversationChain(llm=llm)
 
