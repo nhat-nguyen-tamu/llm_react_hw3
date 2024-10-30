@@ -1,4 +1,7 @@
 langchain
 langchain_community
+langgraph
 streamlit
 openai
+ollama
+requests # for langchain interaction with ollama docker
