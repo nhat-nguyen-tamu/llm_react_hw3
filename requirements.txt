@@ -1,6 +1,7 @@
 langchain
 langchain_community
 langgraph
+langchain-openai
 streamlit
 openai
 ollama
