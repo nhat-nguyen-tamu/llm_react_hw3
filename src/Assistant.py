@@ -20,8 +20,20 @@ class State(TypedDict):
     messages: Annotated[list[AnyMessage], add_messages] = []
 
 class Assistant:
-    def __init__(self):
+    def __init__(self, stream_callback=None):
+        self.stream_callback = stream_callback
+        self.system_prompt = f"""
+You are a general helpful assistant.
+Always run no_tool_call() unless you are instructed to use a tool.
+You are unsure about personal requests (name, email, etc).
+You MUST call get_user_data() first.
+You will observe the result, then call the necessary tools.
+You can also ask the user to give more information.
+"""
+
         llm = ChatOllama(model="llama3.2")
+
+        # CONFIGURABLE BLOCK: you can disable the llm above and use chatgpt's llm here if you have the API key, it's much smarter and faster
         # api_key = st.secrets["OPENAI_API_KEY"]
         # llm = ChatOpenAI(model="gpt-4o", api_key=api_key)  # Replace with your API key
 
@@ -41,15 +53,21 @@ class Assistant:
                     ai_message = AIMessage(content=msg.content) # remove tool calls since it might break the LLM
                     converted_messages.append(ai_message)
                 else:
-                    action_text = "Action: I called these tools:\n"
+                    action_text = "Tool calls:\n"
                     tool_text_list = []
                     for tool in msg.tool_calls:
+                        if tool['name'] == "no_tool_call":
+                            tool_text_list = []
+                            msg.response_metadata['no_tool_used'] = True
+                            break
+
                         tool_text_list.append(f"'name': {str(tool['name'])}, 'args': {str(tool['args'])}")
 
-                    action_text += '\n'.join(tool_text_list)
+                    if tool_text_list:
+                        action_text += '\n'.join(tool_text_list)
 
-                    ai_message = AIMessage(content=action_text) # remove tool calls since it might break the LLM
-                    converted_messages.append(ai_message)
+                        ai_message = AIMessage(content=action_text) # remove tool calls since it might break the LLM
+                        converted_messages.append(ai_message)
             elif isinstance(msg, ToolMessage):
                 # Extract relevant information from ToolMessage
                 tool_name = msg.name
@@ -57,7 +75,7 @@ class Assistant:
                 tool_status = msg.status
 
                 # Create an AIMessage with the tool's response
-                ai_message_content = f"Observation: I ran the tool {tool_name}. I got this output:\nStatus: {tool_status}\nContent: {tool_response}"
+                ai_message_content = f"Ran tool {tool_name}. Tool output:\nStatus: {tool_status}\nContent: {tool_response}"
                 ai_message = AIMessage(content=ai_message_content)
                 converted_messages.append(ai_message)
             else:
@@ -70,8 +88,12 @@ class Assistant:
         while True:
             # print("--->", "START INVOKING", state['messages'])
             #state['messages'] = self.convert_tool_messages(state['messages'])
-            invoke_input = self.convert_tool_messages(state['messages'])
+
+            # invoke_input = state['messages'] # use this for well behaved models like chatgpt
+            invoke_input = self.convert_tool_messages(state['messages']) # we have to do this for ollama models because there is a bug where seeing ToolMessage will confuse it
             result = self.runnable.invoke(invoke_input)
+
+
             # print("--->", "INVOKING DONE")
             # If the LLM happens to return an empty response, we will re-prompt it
             # for an actual response.
@@ -84,11 +106,14 @@ class Assistant:
                 and not result.content[0].get("text")
             ):
                 # print("--->", "MODIFYING STATE", state)
-                messages = state["messages"] + [HumanMessage(content="Repeat what you see in the tool call.")]
+                messages = state["messages"] + [HumanMessage(content="Provide a nonempty response.")]
                 state = {**state, "messages": messages}
             else:
                 # print("--->", "ELSE STATEMENT")
                 break
+
+        if self.stream_callback and result.content:
+            self.stream_callback(result.content)
 
         # print("--->", "RETURNING RESULT", result)
         return {"messages": result}

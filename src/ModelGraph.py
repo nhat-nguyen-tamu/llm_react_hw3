@@ -40,15 +40,18 @@ def _print_event(event: dict, _printed: set, max_length=1500):
             _printed.add(message.id)
 
 def should_continue(state: MessagesState):
+    # print("should continue?", state)
     messages = state["messages"]
     last_message = messages[-1]
     if last_message.tool_calls:
         return "tools"
     return END
 
-class MyGraph():
-    def __init__(self, model_name="PersonalGPT"):
+class AgentGraph():
+    def __init__(self, model_name="PersonalGPT", event_callback=None, stream_callback=None):
         self.model_name = model_name
+        self.event_callback = event_callback
+        self.stream_callback = stream_callback
         self.build_state_graph()
 
     def build_state_graph(self):
@@ -62,7 +65,7 @@ class MyGraph():
         workflow.add_conditional_edges("assistant", should_continue, ["tools", END])
         workflow.add_edge("tools", "assistant")
 
-        memory = MemorySaver()
+        self.memory = MemorySaver()
 
         self.config = {
             "configurable": {
@@ -70,71 +73,58 @@ class MyGraph():
             }
         }
 
-        self.graph = workflow.compile(checkpointer=memory)
-
-    def update_convo(self):
-        # Display conversation history
-        with self.history_container.container():
-            for user_msg, bot_msg in st.session_state.chat_history:
-                st.markdown("---")
-                st.write(f"**You:** {user_msg}")
-                st.write(f"**{self.model_name}:** {bot_msg}")
+        self.graph = workflow.compile(checkpointer=self.memory)
+        
+        # self.graph = workflow.compile() # no memory for now
 
     def call(self, user_input):
         _printed = set()
    
         state = {"messages": [
-            SystemMessage(content=f"You are a helpful assistant. Given a prompt, either answer it directly or use tools as needed.\nCurrent time: {datetime.datetime.now}.\n"), 
+            SystemMessage(content=self.assistant.system_prompt), 
             HumanMessage(content=user_input),
         ]}
 
-        print("--->", "CALL INIT", user_input)
+        # print("--->", "CALL INIT", user_input)
+        self.message_index = 0 # where are you on the list of messages
+        self.aborted = False
+
         for event in self.graph.stream(
             state,
             stream_mode="values",
             config=self.config
         ):
-            print("--->", "Event Called")
+            if self.aborted:
+                break
+
             _print_event(event, _printed)
+            self.handle_event(event)
 
-    def call_model_old(self, user_input):
-        print("MY GRAPH CALL ----------------------------------------------")
-        self.container_text = ""
-        st.session_state.chat_history.insert(0, [user_input, self.container_text])
+    def handle_event(self, event):
+        if not self.event_callback:
+            return
 
-        # Prepare messages directly without wrapping in a dict
-        messages = [
-            SystemMessage(content="You are a helpful assistant. Use your tools if necessary to generate a response. Use the tool response in your output."),
-            HumanMessage(content=user_input),
-        ]
-        inputs = {
-            "messages": messages
-        }
-        
-        # Initial display before streaming starts
-        self.response_container.markdown(
-            f"**You:** {user_input}\n\n**{self.model_name}:** Thinking..."
-        )
+        # Example: Extract messages from the event and send via callback
+        messages = event.get("messages")
+        if messages:
+            while self.message_index < len(messages):
+                msg = messages[self.message_index]
+                if isinstance(msg, HumanMessage):
+                    # User message
+                    self.event_callback({"user": msg.content})
+                elif isinstance(msg, AIMessage):
+                    # Assistant message
+                    if msg.content:
+                        self.event_callback({"assistant": msg.content})
 
-        # Config setup for compatibility with streaming
-        config = RunnableConfig(configurable={"thread_id": "agent_1"})
+                    if msg.tool_calls:
+                        self.event_callback({"tool_call": msg.tool_calls})
+                    
+                elif isinstance(msg, ToolMessage):
+                    # Tool message
+                    self.event_callback({"tool_response": f"---> {msg.name}: {msg.content}"})
 
-        # Synchronously handle events by iterating through them
-        stream = self.model.stream(messages)
-        
-        currentstate = None
-        for chunk in stream:
-            if currentstate:
-                currentstate += chunk
-            else:
-                currentstate = chunk
+                self.message_index += 1
 
-            print("chunk", chunk.content)
-            
-
-        # Clear out response container and finalize conversation
-        self.response_container.empty()
-        self.update_convo()
-
-
-
+    def abort(self):
+        self.aborted = True

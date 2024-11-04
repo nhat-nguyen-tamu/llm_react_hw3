@@ -1,0 +1,4 @@
+import webbrowser
+
+print(webbrowser._browsers)
+#firefox = webbrowser.get('mozilla')
