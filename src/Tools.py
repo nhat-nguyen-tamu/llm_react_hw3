@@ -6,7 +6,7 @@ import streamlit as st
 import functools
 import datetime
 from duckduckgo_search import DDGS
-from GoogleCalendar import CalendarHandler
+from GoogleAPIHelper import GoogleAPIHelper
 
 def action_request(func): # ideally some tools should ask us for confirmation before submitting but I'm out of time to code this
     @functools.wraps(func) # we need this to preserve the docstrings for each tool when we wrap it
@@ -29,34 +29,45 @@ def action_request(func): # ideally some tools should ask us for confirmation be
             return "Tool successfully ran. User must approve of request."
     return wrapper
 
-calendar_handler = CalendarHandler()
+google_api = GoogleAPIHelper()
 calendar_get = False
+private_information_blacklist = [
+    'nhat', 'nguyen',
+]
 
 @tool
 def schedule_meeting(start_time_iso: str, title: str, description: str, event_duration_minutes: int=60):
     '''Schedules a meeting on Google Calendar. The first call will always perform a GET request. The second call will perform a POST request. Use iso format ("YYYY-MM-DDTHH:MM:SS", ex: "2024-11-05T10:30:00")'''
     global calendar_get
-    global calendar_handler
+    global google_api
     
     if not calendar_get:
         calendar_get = True
-        return f"This is the first time calling schedule_meeting.\nMeeting plans will be shown first.\nPlease recall schedule_meeting again after reading the schedule.\n{calendar_handler.get_event()}"
+        return f"This is the first time calling schedule_meeting.\nMeeting plans will be shown first.\nPlease recall schedule_meeting again after reading the schedule.\n{google_api.get_event()}"
     else:
-        return calendar_handler.add_event(start_time_iso, title, description, event_duration_minutes)
+        return google_api.add_event(start_time_iso, title, description, event_duration_minutes)
 
 @tool
-def send_email(email_address: str, header: str, body: str) -> str:
-    '''Create an email draft that the user can approve to auto post to an API'''
-    print("send email called!", header, body)
-    return "Email sent."
+def send_email(email_address: str, subject: str, body: str) -> str:
+    '''Create an email draft to the user'''
+    global google_api
+    
+    return google_api.gmail_send_email(email_address, "nhat.n321@gmail.com", subject, body)
 
 @tool
 def search_online(search_term: str) -> str:
-    '''Search online'''
-    try:
-        result = DDGS().text(search_term, max_results=1)
+    '''Search online. Do not search private information online'''
+    global private_information_blacklist
 
-        print("DUCK DUCK GO RESULTS:", result)
+    try:
+        for term in private_information_blacklist:
+            if term in search_term.lower():
+                return f"There was an error executing the search: You cannot search private information online ({term})"
+
+
+        result = DDGS().text(search_term, max_results=5)
+
+        # print("DUCK DUCK GO RESULTS:", result)
         
         return str(result)
     except Exception as e:
@@ -85,12 +96,14 @@ def no_tool_call() -> bool:
 @tool
 def get_user_data() -> str:
     '''Use this tool to retrieve the user's personal information (name, email, etc) for personal requests'''
-    return str({
-        "full name": "Walter Blanco",
-        "address": "308 Negra Arroyo Lane, Albuquerque, New Mexico 87104",
-        "occupation": "high school chemistry teacher",
-        "birthday": "September 7, 1958",
-    })
+    # return str({
+    #     "full name": "Walter Blanco",
+    #     "address": "308 Negra Arroyo Lane, Albuquerque, New Mexico 87104",
+    #     "occupation": "high school chemistry teacher",
+    #     "birthday": "September 7, 1958",
+    # })
+
+    return "Please ask the user for more information."
 
 def handle_tool_error(state) -> dict:
     error = state.get("error")

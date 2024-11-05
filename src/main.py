@@ -12,7 +12,7 @@ from ModelGraph import AgentGraph
 st.title("CSCE 689 Programming LLMs: Chat Assistant")
 st.write("This assistant can perform the following actions:")
 st.write("- Write and send emails on your behalf")
-st.write("- Read multiple PDF files and answer questions")
+#st.write("- Read multiple PDF files and answer questions")
 st.write("- Schedule meetings for you")
 st.write("- Search the Internet")
 st.write("- Ask you questions, e.g., for your private information or when uncertain")
@@ -36,8 +36,8 @@ def tostring_event(event):
 
 def event_callback(event):
     print("---> event callback", event)
-    # st.session_state.response_text = f"{st.session_state.response_text}\n\n{tostring_event(event)}" # read from top down
-    st.session_state.response_text = f"{tostring_event(event)}\n\n{st.session_state.response_text}" # read from bottom up
+    st.session_state.response_text = f"{st.session_state.response_text}\n\n{tostring_event(event)}" # read from top down
+    # st.session_state.response_text = f"{tostring_event(event)}\n\n{st.session_state.response_text}" # read from bottom up
     response_container.markdown(f"{st.session_state.response_text}")
 
 # Callback to handle streaming text
